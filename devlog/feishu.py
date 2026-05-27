@@ -66,6 +66,9 @@ def _create_docx(cfg: FeishuConfig, md_path: Path, title: str, folder_token: str
     if not md_path.exists():
         raise FeishuError(f"markdown not found: {md_path}")
 
+    md_path = md_path.resolve()
+    cwd = md_path.parent
+    markdown_ref = f"@{md_path.name}"
     commands = [
         [
             cfg.lark_cli,
@@ -76,7 +79,7 @@ def _create_docx(cfg: FeishuConfig, md_path: Path, title: str, folder_token: str
             "--folder-token",
             folder_token,
             "--markdown",
-            f"@{md_path}",
+            markdown_ref,
         ],
         [
             cfg.lark_cli,
@@ -91,13 +94,13 @@ def _create_docx(cfg: FeishuConfig, md_path: Path, title: str, folder_token: str
             "--folder-token",
             folder_token,
             "--content",
-            f"@{md_path}",
+            markdown_ref,
         ],
     ]
     errors: list[str] = []
     for index, cmd in enumerate(commands):
         log.info("posting to feishu: %s", " ".join(cmd))
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
         if proc.returncode == 0:
             return _extract_doc_url(proc.stdout)
 
