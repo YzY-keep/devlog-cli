@@ -66,20 +66,62 @@ def _create_docx(cfg: FeishuConfig, md_path: Path, title: str, folder_token: str
     if not md_path.exists():
         raise FeishuError(f"markdown not found: {md_path}")
 
-    cmd = [
-        cfg.lark_cli, "docs", "+create",
-        "--api-version", "v2",
-        "--doc-format", "markdown",
-        "--title", title,
-        "--folder-token", folder_token,
-        "--content", f"@{md_path}",
+    commands = [
+        [
+            cfg.lark_cli,
+            "docs",
+            "+create",
+            "--title",
+            title,
+            "--folder-token",
+            folder_token,
+            "--markdown",
+            f"@{md_path}",
+        ],
+        [
+            cfg.lark_cli,
+            "docs",
+            "+create",
+            "--api-version",
+            "v2",
+            "--doc-format",
+            "markdown",
+            "--title",
+            title,
+            "--folder-token",
+            folder_token,
+            "--content",
+            f"@{md_path}",
+        ],
     ]
-    log.info("posting to feishu: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        raise FeishuError(f"lark-cli failed: {proc.stderr.strip()[:500]}")
+    errors: list[str] = []
+    for index, cmd in enumerate(commands):
+        log.info("posting to feishu: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if proc.returncode == 0:
+            return _extract_doc_url(proc.stdout)
 
-    out = proc.stdout
+        error = (proc.stderr.strip() or proc.stdout.strip())[:500]
+        if error:
+            errors.append(error)
+        if index == 0 and _should_try_legacy_create(proc.stderr, proc.stdout):
+            continue
+        break
+
+    detail = "; ".join(errors) or "unknown error"
+    raise FeishuError(f"lark-cli failed: {detail}")
+
+
+def _should_try_legacy_create(stderr: str, stdout: str) -> bool:
+    text = f"{stderr}\n{stdout}".lower()
+    return (
+        "unknown flag" in text
+        or "flag provided but not defined" in text
+        or ("usage:" in text and "--markdown" not in text)
+    )
+
+
+def _extract_doc_url(out: str) -> str:
     for line in out.splitlines():
         line = line.strip()
         if line.startswith("http") and "docx" in line:
